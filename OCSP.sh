@@ -36,7 +36,7 @@ OCSP_verify()
 	# Some certificates might not have the OCSP field, handle error
 		if [ -z "$OCSP_URI" ]; then
 			printf "${RED}[!]\tEmpty OCSP URL, skipping ${1}...${NC}\n"
-			continue
+			return
 		fi
 		printf "\tOCSP URI:\t${OCSP_URI}\n"
 
@@ -50,7 +50,7 @@ OCSP_verify()
 	# If certificate chain is empty, skip
 		if [ "$NUM_CERTS" -eq 0 ]; then
 			printf "${RED}[!]\tNo certificates received, skipping ${1}...${NC}\n"
-			continue
+			return
 		fi
 
 	# Split chain of certificates into separate files, store in OCSP_RESULTS/temp named "certXX"
