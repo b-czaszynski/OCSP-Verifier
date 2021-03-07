@@ -63,6 +63,7 @@ OCSP_verify()
 				openssl x509 -in $cert_file -text -noout
 			fi
 
+		# TODO: Check for CRL
 		# Perform an OCSP query
 			CERT_CHECK="$(openssl ocsp -issuer "$cert_file" -cert <(echo "${CERT_PEM}") -url ${OCSP_URI} 2> /dev/null)"
 			exit_code=$?
@@ -85,6 +86,7 @@ OCSP_verify()
 		CTR=$((CTR+1))
 		done
 
+	#TODO: Remove all unnecessary files after it is finished working
 	# Remove temprary certificates
 		rm -f ./temp/cert*
 }
@@ -122,9 +124,9 @@ mkdir -p ./OCSP_RESULTS/temp
 # Process input file line by line
 if [ -n "$INPUT_FILE" ]; then
 	while read line; do
+	#TODO: currently checking only last cert in chain.
 		OCSP_verify $line
 	done < "$INPUT_FILE"
-
 
 # Verify OCSP based on single provided URL
 elif [ -n "$INPUT_STR" ]; then
