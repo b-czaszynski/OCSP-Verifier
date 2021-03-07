@@ -1,0 +1,3 @@
+*.txt
+OCSP_RESULTS/*
+OCSP_RESULTS/temp/*

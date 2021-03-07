@@ -17,9 +17,11 @@ if [ $# -le 1 ]; then
 fi
 
 VERBOSE=0
+PRINT_CERTS=0
+PORT=443
 
-# Argument processing
-while getopts "s:f:vo:" option; do
+# Input argument processing
+while getopts "s:f:vPo:p:" option; do
 	case "$option" in
 	s) INPUT_STR=$OPTARG
 		printf "STR set to $INPUT_STR\n"
@@ -30,51 +32,69 @@ while getopts "s:f:vo:" option; do
 	v) VERBOSE=1
 		printf "Verbosity mode on.\n"
 		;;
-     o) printf "Output redirected to: $OPTARG\n"
+    o) printf "Output redirected to: $OPTARG\n"
 		exec > "$OPTARG"
 		;;
+	P) printf "Cerificate printing: enabled."
+		PRINT_CERTS=1
+		;;
+	p)
 	esac
 done
 
 # For storing intermediate certificates and query results
 mkdir -p ./OCSP_RESULTS/temp
 
-
 # TODO: Extract as a function to be used by both -s anf -f
 # Process input file line by line
 if [ -n "$INPUT_FILE" ]; then
 
 	while read line; do
+	# Download certificate chain from the server.
 		printf "\n${L_CYAN}--- Checking:\t$line\n${NC}"
 		CERT_PEM="$(timeout 10s openssl s_client -connect $line:443 2>/dev/null < /dev/null | sed -n '/-----BEGIN/,/-----END/p')"
-	
+
 	# Skip if connection could not be established
 		case "$?" in
 			0)  ;;
-			124) 
+			124)
 				printf "${RED}[!] Connection to the server failed.${NC}\n"
 				echo "$line" >> ./OCSP_RESULTS/inaccessible.txt
 				continue ;;
 		esac
-
 		OCSP_URI="$(openssl x509 -noout -ocsp_uri -in <(echo "${CERT_PEM}"))"
 
 	#TODO: Some certificates might not have the OCSP field, handle error
+		if [ -z "$OCSP_URI" ]; then
+			printf "${RED}[!]\tEmpty OCSP URL, skipping ${line}...${NC}\n"
+			continue
+		fi
 		printf "\tOCSP URI:\t${OCSP_URI}\n"
 
-	# Retrieve chain of certificates, discarding all additional information	
+	# Retrieve chain of certificates, discarding all additional information
 		CERT_CHAIN="$(openssl s_client -connect $line:443 -showcerts 2>/dev/null < /dev/null | sed -n '/-----BEGIN/,/-----END/p')"
 
 	# Count certificates in the chain
 		NUM_CERTS=$(grep -w "BEGIN" <(echo "${CERT_CHAIN}") -c)
 		printf "Number of certs in chain: \t${NUM_CERTS}\n"
-	
-	# Split chain of certificates into separate files
+
+	# If certificate chain is empty, skip
+		if [ "$NUM_CERTS" -eq 0 ]; then
+			printf "${RED}[!]\tNo certificates received, skipping ${line}...${NC}\n"
+			continue
+		fi
+
+	# Split chain of certificates into separate files, store in OCSP_RESULTS/temp named "certXX"
 		csplit -k -s --elide-empty-files -f ./OCSP_RESULTS/temp/cert <(echo "${CERT_CHAIN}") '/END CERTIFICATE/+1' {$((${NUM_CERTS}-1))}
-		
+
 		CTR=0
 		for cert_file in ./OCSP_RESULTS/temp/cert*; do
-		# Perform an OCSP query 
+		# Print certificate if verbose
+			if [ $PRINT_CERTS -eq 1 ]; then
+				openssl x509 -in $cert_file -text -noout
+			fi
+
+		# Perform an OCSP query
 			CERT_CHECK="$(openssl ocsp -issuer "$cert_file" -cert <(echo "${CERT_PEM}") -url ${OCSP_URI} 2> /dev/null)"
 			exit_code=$?
 			if [ $exit_code -eq 0 ]; then
@@ -102,7 +122,7 @@ if [ -n "$INPUT_FILE" ]; then
 
 
 # TODO: This is old, update
-# Verify OCSP based on single provided URL 
+# Verify OCSP based on single provided URL
 elif [ -n "$INPUT_STR" ]; then
 
 	printf "Checking ${INPUT_STR}...\n"
